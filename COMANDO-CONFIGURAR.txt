@@ -1,0 +1,19 @@
+# ========================================
+# COMANDO UNICO PARA CONFIGURAR TUDO
+# ========================================
+# 
+# COPIE E COLE ESTE COMANDO INTEIRO NO POWERSHELL COMO ADMINISTRADOR:
+#
+# Start-Process powershell -Verb RunAs -ArgumentList "-ExecutionPolicy Bypass -Command `"cd 'c:\Users\USER\Desktop\webtoappify'; & '.\configurar-android-sdk.ps1'`""
+#
+# ========================================
+
+# OU, se preferir passo a passo:
+
+# 1. Abra PowerShell como Administrador
+# 2. Cole este comando:
+
+cd "c:\Users\USER\Desktop\webtoappify"
+powershell -ExecutionPolicy Bypass -File .\configurar-android-sdk.ps1
+
+# ========================================

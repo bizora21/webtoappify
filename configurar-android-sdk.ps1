@@ -39,6 +39,37 @@ Write-Host "   OK: ANDROID_HOME = $sdkPath" -ForegroundColor Green
 [System.Environment]::SetEnvironmentVariable('ANDROID_SDK_ROOT', $sdkPath, 'Machine')
 Write-Host "   OK: ANDROID_SDK_ROOT = $sdkPath" -ForegroundColor Green
 
+# Configurar JAVA_HOME
+$javaPath = "C:\Program Files\Eclipse Adoptium\jdk-17.0.17.10-hotspot"
+if (Test-Path $javaPath) {
+    [System.Environment]::SetEnvironmentVariable('JAVA_HOME', $javaPath, 'Machine')
+    Write-Host "   OK: JAVA_HOME = $javaPath" -ForegroundColor Green
+}
+else {
+    # Tentar encontrar Java automaticamente
+    $possiblePaths = @(
+        "C:\Program Files\Eclipse Adoptium\jdk-17*",
+        "C:\Program Files\Java\jdk-17*",
+        "C:\Program Files\OpenJDK\jdk-17*"
+    )
+    
+    $foundJava = $false
+    foreach ($pattern in $possiblePaths) {
+        $javaDir = Get-ChildItem -Path $pattern -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($javaDir) {
+            [System.Environment]::SetEnvironmentVariable('JAVA_HOME', $javaDir.FullName, 'Machine')
+            Write-Host "   OK: JAVA_HOME = $($javaDir.FullName)" -ForegroundColor Green
+            $foundJava = $true
+            break
+        }
+    }
+    
+    if (-not $foundJava) {
+        Write-Host "   AVISO: Nao foi possivel encontrar Java automaticamente" -ForegroundColor Yellow
+        Write-Host "   Configure JAVA_HOME manualmente se necessario" -ForegroundColor Yellow
+    }
+}
+
 # Adicionar ao PATH
 $currentPath = [System.Environment]::GetEnvironmentVariable('Path', 'Machine')
 $pathsToAdd = @(
