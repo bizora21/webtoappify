@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: webtoappify-db
+    environment:
+      POSTGRES_USER: webtoappify
+      POSTGRES_PASSWORD: webtoappify_dev_password
+      POSTGRES_DB: webtoappify
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U webtoappify"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API Server
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: webtoappify-backend
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://webtoappify:webtoappify_dev_password@postgres:5432/webtoappify
+      - ANDROID_SDK_ROOT=/opt/android-sdk
+      - KEYSTORE_PASSWORD=${KEYSTORE_PASSWORD:-default_dev_password}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_S3_BUCKET=${AWS_S3_BUCKET}
+      - CORS_ORIGIN=http://localhost:5173
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      - build_cache:/app/builds
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: npm run dev
+
+  # Frontend (Vite Dev Server)
+  frontend:
+    image: node:20-alpine
+    container_name: webtoappify-frontend
+    working_dir: /app
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:3000
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: npm run dev -- --host
+
+volumes:
+  postgres_data:
+  build_cache:

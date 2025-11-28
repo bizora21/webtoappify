@@ -1,0 +1,5 @@
+{
+  "name": "WebToAppify",
+  "description": "SaaS platform to convert any website URL into a signed Android App Bundle (.AAB) using Trusted Web Activities.",
+  "requestFramePermissions": []
+}

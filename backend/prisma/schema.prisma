@@ -1,0 +1,76 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Build {
+  id            String    @id @default(cuid())
+  
+  // App Configuration
+  appName       String
+  packageName   String    @unique
+  url           String
+  contactEmail  String
+  
+  // Branding
+  primaryColor  String
+  iconPath      String?
+  splashPath    String?
+  
+  // Features
+  offlineMode   Boolean   @default(false)
+  pushNotifications Boolean @default(false)
+  fcmKey        String?
+  privacyPolicyUrl String?
+  
+  // Build Status
+  status        BuildStatus @default(QUEUED)
+  progress      Int         @default(0)
+  logs          String[]    @default([])
+  
+  // Output Files
+  aabUrl        String?
+  apkUrl        String?
+  aabSize       Int?        // Size in bytes
+  apkSize       Int?
+  
+  // Keystore
+  keystorePath  String?
+  keystoreAlias String?
+  
+  // Asset Links
+  assetLinksJson String?
+  assetLinksVerified Boolean @default(false)
+  
+  // Error Handling
+  error         String?
+  errorDetails  String?
+  
+  // Timestamps
+  createdAt     DateTime  @default(now())
+  startedAt     DateTime?
+  completedAt   DateTime?
+  
+  @@index([status])
+  @@index([createdAt])
+  @@index([packageName])
+}
+
+enum BuildStatus {
+  QUEUED
+  VALIDATING
+  GENERATING_ICONS
+  CONFIGURING_TWA
+  BUILDING
+  SIGNING
+  UPLOADING
+  SUCCESS
+  FAILED
+}
