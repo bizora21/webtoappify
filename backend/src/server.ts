@@ -4,6 +4,8 @@ import dotenv from 'dotenv';
 console.log('Imports loaded');
 import buildRouter from './routes/build.js';
 console.log('Routes imported');
+import healthRouter from './routes/health.js';
+console.log('Health route imported');
 
 // Load environment variables
 dotenv.config();
@@ -31,6 +33,7 @@ app.get('/health', (req, res) => {
 });
 
 // API Routes
+app.use('/api/health', healthRouter);
 app.use('/api/build', buildRouter);
 
 // Error handling middleware

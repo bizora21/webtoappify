@@ -134,8 +134,18 @@ export class BuildService {
             console.log(`⚙️ Generating TWA project...`);
             await this.updateStatus(buildId, 'building', 20, ['Generating TWA project with Bubblewrap...']);
 
-            const bubblewrapCmd = process.platform === 'win32' ? 'bubblewrap.cmd' : 'bubblewrap';
-            await execAsync(`${bubblewrapCmd} init --manifest twa-manifest.json --directory .`, { cwd: projectDir });
+            // Set environment variables to skip interactive prompts
+            const bubblewrapEnv = {
+                ...process.env,
+                JDKPATH: process.env.JAVA_HOME || 'skip', // Tell Bubblewrap to skip JDK install
+                CI: 'true' // Some tools check this to disable interactive mode
+            };
+
+            // Use npx to ensure we get the global installation
+            await execAsync(`npx @bubblewrap/cli init --manifest twa-manifest.json --directory .`, {
+                cwd: projectDir,
+                env: bubblewrapEnv
+            });
 
             // 3. Build APK/AAB
             console.log(`🔨 Building Android artifacts...`);
