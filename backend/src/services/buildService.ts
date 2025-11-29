@@ -74,19 +74,43 @@ export class BuildService {
             const gradlew = process.platform === 'win32' ? 'gradlew.bat' : './gradlew';
             const androidHome = process.env.ANDROID_HOME || `${process.env.LOCALAPPDATA}\\Android\\Sdk`;
 
-            console.log('   - Building AAB...');
-            await execAsync(`${gradlew} bundleRelease`, {
-                cwd: projectDir,
-                timeout: 600000,
-                env: { ...process.env, ANDROID_HOME: androidHome }
-            });
+            console.log('   - Android SDK Home:', androidHome);
+            console.log('   - Gradle wrapper:', gradlew);
+            console.log('   - Project directory:', projectDir);
 
-            console.log('   - Building APK...');
-            await execAsync(`${gradlew} assembleRelease`, {
-                cwd: projectDir,
-                timeout: 600000,
-                env: { ...process.env, ANDROID_HOME: androidHome }
-            });
+            try {
+                console.log('   - Building AAB...');
+                await this.updateStatus(buildId, 'building', 55, ['Building AAB bundle...']);
+                const aabResult = await execAsync(`${gradlew} bundleRelease`, {
+                    cwd: projectDir,
+                    timeout: 600000,
+                    env: { ...process.env, ANDROID_HOME: androidHome }
+                });
+                console.log('   - AAB build output:', aabResult.stdout);
+                if (aabResult.stderr) console.warn('   - AAB build warnings:', aabResult.stderr);
+            } catch (error: any) {
+                console.error('   - AAB build failed:', error.message);
+                console.error('   - stdout:', error.stdout);
+                console.error('   - stderr:', error.stderr);
+                throw new Error(`AAB build failed: ${error.message}\n${error.stderr || error.stdout}`);
+            }
+
+            try {
+                console.log('   - Building APK...');
+                await this.updateStatus(buildId, 'building', 75, ['Building APK...']);
+                const apkResult = await execAsync(`${gradlew} assembleRelease`, {
+                    cwd: projectDir,
+                    timeout: 600000,
+                    env: { ...process.env, ANDROID_HOME: androidHome }
+                });
+                console.log('   - APK build output:', apkResult.stdout);
+                if (apkResult.stderr) console.warn('   - APK build warnings:', apkResult.stderr);
+            } catch (error: any) {
+                console.error('   - APK build failed:', error.message);
+                console.error('   - stdout:', error.stdout);
+                console.error('   - stderr:', error.stderr);
+                throw new Error(`APK build failed: ${error.message}\n${error.stderr || error.stdout}`);
+            }
 
             const aabPath = path.join(projectDir, 'app', 'build', 'outputs', 'bundle', 'release', 'app-release.aab');
             const apkPath = path.join(projectDir, 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk');
@@ -110,10 +134,21 @@ export class BuildService {
             console.log(`🎉 Real build completed!`);
         } catch (error: any) {
             console.error(`❌ Build failed:`, error);
+            console.error(`   - Error message:`, error.message);
+            console.error(`   - Error stack:`, error.stack);
+
+            const errorLogs = [
+                `Build failed: ${error.message}`,
+                `Error type: ${error.constructor.name}`,
+                error.stdout ? `stdout: ${error.stdout}` : null,
+                error.stderr ? `stderr: ${error.stderr}` : null,
+                `Stack trace: ${error.stack}`
+            ].filter(Boolean);
+
             await databases.updateDocument(APPWRITE_DB_ID, APPWRITE_COLLECTION_ID, buildId, {
                 status: 'failed',
                 error: error.message,
-                logs: [`Build failed: ${error.message}`],
+                logs: errorLogs,
                 completedAt: new Date().toISOString()
             });
         }
@@ -180,20 +215,114 @@ org.gradle.jvmargs=-Xmx2048m
         const wrapperDir = path.join(projectDir, 'gradle', 'wrapper');
         await fs.promises.mkdir(wrapperDir, { recursive: true });
 
+        console.log('   - Downloading Gradle Wrapper JAR...');
         // Download gradle-wrapper.jar
-        const jarUrl = 'https://raw.githubusercontent.com/gradle/gradle/master/gradle/wrapper/gradle-wrapper.jar';
+        const jarUrl = 'https://raw.githubusercontent.com/gradle/gradle/v8.0.0/gradle/wrapper/gradle-wrapper.jar';
         const jarPath = path.join(wrapperDir, 'gradle-wrapper.jar');
         await this.downloadFile(jarUrl, jarPath);
 
-        // Create gradle-wrapper.properties
-        await fs.promises.writeFile(path.join(wrapperDir, 'gradle-wrapper.properties'), `
+        console.log('   - Creating gradle-wrapper.properties...');
+        // Create gradle-wrapper.properties with proper format
+        await fs.promises.writeFile(path.join(wrapperDir, 'gradle-wrapper.properties'),
+            `distributionBase=GRADLE_USER_HOME
+distributionPath=wrapper/dists
 distributionUrl=https\\://services.gradle.org/distributions/gradle-8.0-bin.zip
+networkTimeout=10000
+zipStoreBase=GRADLE_USER_HOME
+zipStorePath=wrapper/dists
 `);
 
-        // Create gradlew.bat
-        await fs.promises.writeFile(path.join(projectDir, 'gradlew.bat'), `@echo off
-set GRADLE_USER_HOME=%USERPROFILE%\\.gradle
-"%JAVA_HOME%\\bin\\java" -jar "%~dp0gradle\\wrapper\\gradle-wrapper.jar" %*
+        console.log('   - Creating gradlew.bat...');
+        // Create proper gradlew.bat for Windows
+        await fs.promises.writeFile(path.join(projectDir, 'gradlew.bat'),
+            `@rem
+@rem Copyright 2015 the original author or authors.
+@rem
+@rem Licensed under the Apache License, Version 2.0 (the "License");
+@rem you may not use this file except in compliance with the License.
+@rem You may obtain a copy of the License at
+@rem
+@rem      https://www.apache.org/licenses/LICENSE-2.0
+@rem
+@rem Unless required by applicable law or agreed to in writing, software
+@rem distributed under the License is distributed on an "AS IS" BASIS,
+@rem WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+@rem See the License for the specific language governing permissions and
+@rem limitations under the License.
+@rem
+
+@if "%DEBUG%"=="" @echo off
+@rem ##########################################################################
+@rem
+@rem  Gradle startup script for Windows
+@rem
+@rem ##########################################################################
+
+@rem Set local scope for the variables with windows NT shell
+if "%OS%"=="Windows_NT" setlocal
+
+set DIRNAME=%~dp0
+if "%DIRNAME%"=="" set DIRNAME=.
+set APP_BASE_NAME=%~n0
+set APP_HOME=%DIRNAME%
+
+@rem Resolve any "." and ".." in APP_HOME to make it shorter.
+for %%i in ("%APP_HOME%") do set APP_HOME=%%~fi
+
+@rem Add default JVM options here. You can also use JAVA_OPTS and GRADLE_OPTS to pass JVM options to this script.
+set DEFAULT_JVM_OPTS="-Xmx64m" "-Xms64m"
+
+@rem Find java.exe
+if defined JAVA_HOME goto findJavaFromJavaHome
+
+set JAVA_EXE=java.exe
+%JAVA_EXE% -version >NUL 2>&1
+if %ERRORLEVEL% equ 0 goto execute
+
+echo.
+echo ERROR: JAVA_HOME is not set and no 'java' command could be found in your PATH.
+echo.
+echo Please set the JAVA_HOME variable in your environment to match the
+echo location of your Java installation.
+
+goto fail
+
+:findJavaFromJavaHome
+set JAVA_HOME=%JAVA_HOME:"=%
+set JAVA_EXE=%JAVA_HOME%/bin/java.exe
+
+if exist "%JAVA_EXE%" goto execute
+
+echo.
+echo ERROR: JAVA_HOME is set to an invalid directory: %JAVA_HOME%
+echo.
+echo Please set the JAVA_HOME variable in your environment to match the
+echo location of your Java installation.
+
+goto fail
+
+:execute
+@rem Setup the command line
+
+set CLASSPATH=%APP_HOME%\\gradle\\wrapper\\gradle-wrapper.jar
+
+@rem Execute Gradle
+"%JAVA_EXE%" %DEFAULT_JVM_OPTS% %JAVA_OPTS% %GRADLE_OPTS% "-Dorg.gradle.appname=%APP_BASE_NAME%" -classpath "%CLASSPATH%" org.gradle.wrapper.GradleWrapperMain %*
+
+:end
+@rem End local scope for the variables with windows NT shell
+if %ERRORLEVEL% equ 0 goto mainEnd
+
+:fail
+rem Set variable GRADLE_EXIT_CONSOLE if you need the _script_ return code instead of
+rem the _cmd.exe /c_ return code!
+if not "" == "%GRADLE_EXIT_CONSOLE%" exit 1
+exit /b 1
+
+:mainEnd
+if "%OS%"=="Windows_NT" endlocal
+
+:omega
 `);
     }
 
