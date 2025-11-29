@@ -2,31 +2,20 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 import fs from 'fs';
+import https from 'https';
 import { v4 as uuidv4 } from 'uuid';
 import { uploadFile } from './storageService';
 import { databases } from '../appwrite/client';
-import { KeystoreService } from './keystoreService';
 
-// Appwrite environment variables
 const APPWRITE_DB_ID = process.env.APPWRITE_DATABASE_ID || '';
 const APPWRITE_COLLECTION_ID = process.env.APPWRITE_COLLECTION_ID || '';
-
 const execAsync = promisify(exec);
 
-/**
- * Check if required tools are installed
- */
-async function checkToolsAvailability(): Promise<{ hasJava: boolean; hasAndroidSDK: boolean; hasBubblewrap: boolean }> {
-    const results = {
-        hasJava: false,
-        hasAndroidSDK: false,
-        hasBubblewrap: false
-    };
-
-    console.log('🔍 Checking tool availability...');
+async function checkToolsAvailability(): Promise<{ hasJava: boolean; hasAndroidSDK: boolean }> {
+    const results = { hasJava: false, hasAndroidSDK: false };
+    console.log('🔍 Checking tools...');
 
     try {
-        console.log('   - Checking Java...');
         await execAsync('java -version');
         results.hasJava = true;
         console.log('   ✅ Java found');
@@ -35,7 +24,6 @@ async function checkToolsAvailability(): Promise<{ hasJava: boolean; hasAndroidS
     }
 
     try {
-        console.log('   - Checking Android SDK...');
         await execAsync('adb --version');
         results.hasAndroidSDK = true;
         console.log('   ✅ Android SDK found');
@@ -43,313 +31,197 @@ async function checkToolsAvailability(): Promise<{ hasJava: boolean; hasAndroidS
         console.warn('   ⚠️  Android SDK not found');
     }
 
-    try {
-        console.log('   - Checking Bubblewrap (with 5s timeout)...');
-
-        // On Windows, bubblewrap --version hangs, so skip the check
-        if (process.platform === 'win32') {
-            console.log('   ⚠️  Skipping Bubblewrap check on Windows (assuming installed)');
-            results.hasBubblewrap = true; // Assume it's installed
-        } else {
-            const bubblewrapCmd = 'bubblewrap';
-
-            // Add timeout to prevent hanging
-            await Promise.race([
-                execAsync(`${bubblewrapCmd} --version`),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
-            ]);
-
-            results.hasBubblewrap = true;
-            console.log('   ✅ Bubblewrap found');
-        }
-    } catch (e: any) {
-        if (e.message === 'Timeout') {
-            console.warn('   ⚠️  Bubblewrap check timed out (assuming not available)');
-        } else {
-            console.warn('   ⚠️  Bubblewrap not found');
-        }
-    }
-
-    console.log(`📊 Tool check complete: Java=${results.hasJava}, SDK=${results.hasAndroidSDK}, Bubblewrap=${results.hasBubblewrap}`);
     return results;
 }
 
-/**
- * Service responsible for generating a Trusted Web Activity (TWA) Android project
- * using Bubblewrap, building it with Gradle, signing it, and uploading the
- * artifacts to cloud storage.
- */
 export class BuildService {
     static async buildApp(config: any): Promise<any> {
         const buildId = uuidv4();
-        // Create build record in Appwrite
-        await databases.createDocument(
-            APPWRITE_DB_ID,
-            APPWRITE_COLLECTION_ID,
-            buildId,
-            {
-                status: 'queued',
-                config: JSON.stringify(config),
-                createdAt: new Date().toISOString()
-            }
-        );
-
-        // Start build process asynchronously
-        this.runBuild(buildId, config).catch(err => {
-            console.error(`Build ${buildId} failed:`, err);
+        await databases.createDocument(APPWRITE_DB_ID, APPWRITE_COLLECTION_ID, buildId, {
+            status: 'queued',
+            config: JSON.stringify(config),
+            createdAt: new Date().toISOString()
         });
 
+        this.runBuild(buildId, config).catch(err => console.error(`Build failed:`, err));
         return { id: buildId, status: 'queued' };
     }
 
     private static async runBuild(buildId: string, config: any) {
         const projectDir = path.resolve('builds', buildId);
-        console.log(`🚀 Starting build ${buildId} for ${config.appName}`);
+        console.log(`🚀 Starting REAL build ${buildId}`);
 
-        // Check if tools are available
         const tools = await checkToolsAvailability();
-        const canBuildReal = tools.hasJava && tools.hasAndroidSDK && tools.hasBubblewrap;
-
-        if (!canBuildReal) {
-            console.warn('⚠️  Missing tools for real build. Running in SIMULATION mode.');
-            console.warn('   Install Java, Android SDK, and Bubblewrap for real builds.');
-            console.warn('   OR use Docker: docker-compose up --build');
-            return this.runSimulatedBuild(buildId, config, projectDir);
+        if (!tools.hasJava || !tools.hasAndroidSDK) {
+            throw new Error('Java and Android SDK are required. Please install them.');
         }
 
         return this.runRealBuild(buildId, config, projectDir);
     }
 
-    /**
-     * Run a real build with Bubblewrap and Gradle
-     */
     private static async runRealBuild(buildId: string, config: any, projectDir: string) {
         try {
-            console.log(`📝 Updating status to 'building'...`);
             await this.updateStatus(buildId, 'building', 0, ['Starting real build...']);
-
-            // 1. Initialize project
-            console.log(`📂 Creating project directory: ${projectDir}`);
             await fs.promises.mkdir(projectDir, { recursive: true });
 
-            // Generate TWA Manifest
-            const manifest = {
-                packageId: config.packageName,
-                host: new URL(config.url).host,
-                name: config.appName,
-                launcherName: config.appName,
-                display: 'standalone',
-                themeColor: config.primaryColor,
-                navigationColor: config.primaryColor,
-                backgroundColor: config.primaryColor,
-                startUrl: config.url,
-                iconUrl: config.iconUrl || 'https://via.placeholder.com/512',
-                maskableIconUrl: config.iconUrl || 'https://via.placeholder.com/512',
-                appVersion: '1.0.0',
-                appVersionCode: 1,
-                signingKey: {
-                    path: await KeystoreService.getOrCreateKeystore(config.packageName),
-                    alias: 'upload'
-                },
-                generatorApp: 'webtoappify'
-            };
+            await this.updateStatus(buildId, 'building', 20, ['Generating Android project...']);
+            await this.generateTWAProject(projectDir, config);
 
-            await fs.promises.writeFile(path.join(projectDir, 'twa-manifest.json'), JSON.stringify(manifest, null, 2));
+            await this.updateStatus(buildId, 'building', 30, ['Downloading Gradle Wrapper...']);
+            await this.downloadGradleWrapper(projectDir);
 
-            // 2. Run Bubblewrap to generate TWA
-            console.log(`⚙️ Generating TWA project...`);
-            await this.updateStatus(buildId, 'building', 20, ['Generating TWA project with Bubblewrap...']);
-
-            // Set environment variables to skip interactive prompts
-            const bubblewrapEnv = {
-                ...process.env,
-                JDKPATH: process.env.JAVA_HOME || 'skip', // Tell Bubblewrap to skip JDK install
-                CI: 'true' // Some tools check this to disable interactive mode
-            };
-
-            // Use global bubblewrap directly to avoid npx prompts
-            const bubblewrapExec = process.platform === 'win32' ? 'bubblewrap.cmd' : 'bubblewrap';
-            console.log(`   - Running ${bubblewrapExec} init...`);
-
-            try {
-                const { stdout, stderr } = await execAsync(`${bubblewrapExec} init --manifest twa-manifest.json --directory .`, {
-                    cwd: projectDir,
-                    env: bubblewrapEnv,
-                    timeout: 300000 // 5 minutes timeout
-                });
-                console.log('   - Bubblewrap init output:', stdout);
-                if (stderr) console.warn('   - Bubblewrap init warnings:', stderr);
-            } catch (error: any) {
-                console.error('   ❌ Bubblewrap init failed:', error.message);
-                // Log stdout/stderr if available in the error object (exec provides these)
-                if (error.stdout) console.error('   - Stdout:', error.stdout);
-                if (error.stderr) console.error('   - Stderr:', error.stderr);
-                throw error;
-            }
-
-            // 3. Build APK/AAB
-            console.log(`🔨 Building Android artifacts...`);
-            await this.updateStatus(buildId, 'building', 50, ['Building Android artifacts with Gradle...']);
-
+            await this.updateStatus(buildId, 'building', 50, ['Building with Gradle...']);
             const gradlew = process.platform === 'win32' ? 'gradlew.bat' : './gradlew';
+            const androidHome = process.env.ANDROID_HOME || `${process.env.LOCALAPPDATA}\\Android\\Sdk`;
 
-            // Build AAB
-            console.log('   - Building Bundle (AAB)...');
-            await execAsync(`${gradlew} bundleRelease`, { cwd: projectDir });
+            console.log('   - Building AAB...');
+            await execAsync(`${gradlew} bundleRelease`, {
+                cwd: projectDir,
+                timeout: 600000,
+                env: { ...process.env, ANDROID_HOME: androidHome }
+            });
 
-            // Build APK
             console.log('   - Building APK...');
-            await execAsync(`${gradlew} assembleRelease`, { cwd: projectDir });
+            await execAsync(`${gradlew} assembleRelease`, {
+                cwd: projectDir,
+                timeout: 600000,
+                env: { ...process.env, ANDROID_HOME: androidHome }
+            });
 
-            // 4. Verify Artifacts
-            let aabPath = path.join(projectDir, 'app', 'release', 'app-release.aab');
-            let apkPath = path.join(projectDir, 'app', 'release', 'app-release.apk');
-
-            if (!fs.existsSync(aabPath)) {
-                aabPath = path.join(projectDir, 'app', 'build', 'outputs', 'bundle', 'release', 'app-release.aab');
-            }
-            if (!fs.existsSync(apkPath)) {
-                apkPath = path.join(projectDir, 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk');
-            }
+            const aabPath = path.join(projectDir, 'app', 'build', 'outputs', 'bundle', 'release', 'app-release.aab');
+            const apkPath = path.join(projectDir, 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk');
 
             if (!fs.existsSync(aabPath) || !fs.existsSync(apkPath)) {
-                throw new Error('Build artifacts not found. Gradle build might have failed.');
+                throw new Error('Build artifacts not found');
             }
 
-            // 5. Upload to Storage
-            console.log(`☁️ Uploading artifacts to Appwrite Storage...`);
-            await this.updateStatus(buildId, 'building', 90, ['Uploading artifacts...']);
-
-            console.log(`   - Uploading AAB: ${aabPath}`);
+            await this.updateStatus(buildId, 'building', 90, ['Uploading...']);
             const aabUrl = await uploadFile(aabPath, `builds/${buildId}/app-release.aab`);
-
-            console.log(`   - Uploading APK: ${apkPath}`);
             const apkUrl = await uploadFile(apkPath, `builds/${buildId}/app-release.apk`);
 
-            // 6. Complete
-            console.log(`✅ Build complete! Updating final status...`);
-            await databases.updateDocument(
-                APPWRITE_DB_ID,
-                APPWRITE_COLLECTION_ID,
-                buildId,
-                {
-                    status: 'success',
-                    progress: 100,
-                    aabUrl,
-                    apkUrl,
-                    completedAt: new Date().toISOString()
-                }
-            );
-            console.log(`🎉 Build ${buildId} finished successfully.`);
+            await databases.updateDocument(APPWRITE_DB_ID, APPWRITE_COLLECTION_ID, buildId, {
+                status: 'success',
+                progress: 100,
+                aabUrl,
+                apkUrl,
+                completedAt: new Date().toISOString()
+            });
 
+            console.log(`🎉 Real build completed!`);
         } catch (error: any) {
-            console.error(`❌ Build failed: ${error.message}`);
-            console.error(error);
-            try {
-                await databases.updateDocument(
-                    APPWRITE_DB_ID,
-                    APPWRITE_COLLECTION_ID,
-                    buildId,
-                    {
-                        status: 'failed',
-                        error: error.message,
-                        completedAt: new Date().toISOString()
-                    }
-                );
-            } catch (updateError) {
-                console.error('❌ Failed to update build status to failed:', updateError);
-            }
+            console.error(`❌ Build failed:`, error);
+            await databases.updateDocument(APPWRITE_DB_ID, APPWRITE_COLLECTION_ID, buildId, {
+                status: 'failed',
+                error: error.message,
+                logs: [`Build failed: ${error.message}`],
+                completedAt: new Date().toISOString()
+            });
         }
     }
 
-    /**
-     * Run a simulated build (when tools are not available)
-     */
-    private static async runSimulatedBuild(buildId: string, config: any, projectDir: string) {
-        try {
-            console.log(`📝 Running SIMULATED build (tools not available)...`);
-            await this.updateStatus(buildId, 'building', 0, ['[SIMULATION] Starting build...', 'Note: Install Java, Android SDK, and Bubblewrap for real builds']);
+    private static async generateTWAProject(projectDir: string, config: any) {
+        const appDir = path.join(projectDir, 'app');
+        const srcDir = path.join(appDir, 'src', 'main');
+        await fs.promises.mkdir(path.join(srcDir, 'res', 'values'), { recursive: true });
 
-            // Create project directory
-            await fs.promises.mkdir(projectDir, { recursive: true });
+        await fs.promises.writeFile(path.join(projectDir, 'build.gradle'), `
+buildscript {
+    repositories { google(); mavenCentral() }
+    dependencies { classpath 'com.android.tools.build:gradle:8.1.0' }
+}
+allprojects { repositories { google(); mavenCentral() } }
+`);
 
-            // Simulate steps with delays
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            await this.updateStatus(buildId, 'building', 20, ['[SIMULATION] Generating TWA project...']);
+        await fs.promises.writeFile(path.join(projectDir, 'settings.gradle'), `include ':app'`);
 
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            await this.updateStatus(buildId, 'building', 50, ['[SIMULATION] Building Android artifacts...']);
+        await fs.promises.writeFile(path.join(appDir, 'build.gradle'), `
+plugins { id 'com.android.application' }
+android {
+    namespace '${config.packageName}'
+    compileSdk 34
+    defaultConfig {
+        applicationId '${config.packageName}'
+        minSdk 23
+        targetSdk 34
+        versionCode 1
+        versionName '1.0.0'
+    }
+}
+dependencies {
+    implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.5.0'
+}
+`);
 
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            await this.updateStatus(buildId, 'building', 80, ['[SIMULATION] Signing artifacts...']);
+        await fs.promises.writeFile(path.join(srcDir, 'AndroidManifest.xml'), `<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <application android:label="${config.appName}">
+        <activity android:name="com.google.androidbrowserhelper.trusted.LauncherActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <meta-data android:name="android.support.customtabs.trusted.DEFAULT_URL" android:value="${config.url}" />
+        </activity>
+    </application>
+</manifest>`);
 
-            // Create mock files
-            const mockDir = path.join(projectDir, 'app', 'release');
-            await fs.promises.mkdir(mockDir, { recursive: true });
+        await fs.promises.writeFile(path.join(srcDir, 'res', 'values', 'strings.xml'), `<?xml version="1.0" encoding="utf-8"?>
+<resources><string name="app_name">${config.appName}</string></resources>`);
 
-            const aabPath = path.join(mockDir, 'app-release.aab');
-            const apkPath = path.join(mockDir, 'app-release.apk');
+        await fs.promises.writeFile(path.join(projectDir, 'gradle.properties'), `
+android.useAndroidX=true
+android.enableJetifier=true
+org.gradle.jvmargs=-Xmx2048m
+`);
+    }
 
-            // Create realistic-sized mock files (10MB each)
-            const mockContent = Buffer.alloc(10 * 1024 * 1024, 'MOCK_BUILD_FILE');
-            await fs.promises.writeFile(aabPath, mockContent);
-            await fs.promises.writeFile(apkPath, mockContent);
+    private static async downloadGradleWrapper(projectDir: string) {
+        const wrapperDir = path.join(projectDir, 'gradle', 'wrapper');
+        await fs.promises.mkdir(wrapperDir, { recursive: true });
 
-            await this.updateStatus(buildId, 'building', 90, ['[SIMULATION] Uploading artifacts...']);
+        // Download gradle-wrapper.jar
+        const jarUrl = 'https://raw.githubusercontent.com/gradle/gradle/master/gradle/wrapper/gradle-wrapper.jar';
+        const jarPath = path.join(wrapperDir, 'gradle-wrapper.jar');
+        await this.downloadFile(jarUrl, jarPath);
 
-            // Upload mock files
-            const aabUrl = await uploadFile(aabPath, `builds/${buildId}/app-release.aab`);
-            const apkUrl = await uploadFile(apkPath, `builds/${buildId}/app-release.apk`);
+        // Create gradle-wrapper.properties
+        await fs.promises.writeFile(path.join(wrapperDir, 'gradle-wrapper.properties'), `
+distributionUrl=https\\://services.gradle.org/distributions/gradle-8.0-bin.zip
+`);
 
-            // Complete
-            await databases.updateDocument(
-                APPWRITE_DB_ID,
-                APPWRITE_COLLECTION_ID,
-                buildId,
-                {
-                    status: 'success',
-                    progress: 100,
-                    aabUrl,
-                    apkUrl,
-                    completedAt: new Date().toISOString()
-                }
-            );
-            console.log(`🎉 [SIMULATION] Build ${buildId} finished.`);
-            console.log(`⚠️  This is a SIMULATED build. Files are not real Android apps.`);
+        // Create gradlew.bat
+        await fs.promises.writeFile(path.join(projectDir, 'gradlew.bat'), `@echo off
+set GRADLE_USER_HOME=%USERPROFILE%\\.gradle
+"%JAVA_HOME%\\bin\\java" -jar "%~dp0gradle\\wrapper\\gradle-wrapper.jar" %*
+`);
+    }
 
-        } catch (error: any) {
-            console.error(`❌ Simulated build failed: ${error.message}`);
-            try {
-                await databases.updateDocument(
-                    APPWRITE_DB_ID,
-                    APPWRITE_COLLECTION_ID,
-                    buildId,
-                    {
-                        status: 'failed',
-                        error: error.message,
-                        completedAt: new Date().toISOString()
-                    }
-                );
-            } catch (updateError) {
-                console.error('❌ Failed to update build status:', updateError);
-            }
-        }
+    private static downloadFile(url: string, dest: string): Promise<void> {
+        return new Promise((resolve, reject) => {
+            const file = fs.createWriteStream(dest);
+            https.get(url, (response) => {
+                response.pipe(file);
+                file.on('finish', () => {
+                    file.close();
+                    resolve();
+                });
+            }).on('error', (err) => {
+                fs.unlinkSync(dest);
+                reject(err);
+            });
+        });
     }
 
     private static async updateStatus(buildId: string, status: string, progress: number, logs: string[]) {
         try {
-            await databases.updateDocument(
-                APPWRITE_DB_ID,
-                APPWRITE_COLLECTION_ID,
-                buildId,
-                {
-                    status,
-                    progress,
-                    logs: logs
-                }
-            );
+            await databases.updateDocument(APPWRITE_DB_ID, APPWRITE_COLLECTION_ID, buildId, {
+                status,
+                progress,
+                logs
+            });
         } catch (error) {
-            console.error(`❌ Failed to update status for ${buildId}:`, error);
+            console.error(`Failed to update status:`, error);
         }
     }
 }

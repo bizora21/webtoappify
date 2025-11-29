@@ -11,6 +11,7 @@ const StepBuild: React.FC<Props> = ({ config, onReset }) => {
   const [progress, setProgress] = useState(0);
   const [logs, setLogs] = useState<string[]>([]);
   const [isComplete, setIsComplete] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'building' | 'success' | 'failed'>('idle');
   const [buildId, setBuildId] = useState<string | null>(null);
   const [downloadUrls, setDownloadUrls] = useState<{ aab?: string; apk?: string }>({});
   const logEndRef = useRef<HTMLDivElement>(null);
@@ -20,14 +21,16 @@ const StepBuild: React.FC<Props> = ({ config, onReset }) => {
     if (!buildId) return;
     const interval = setInterval(async () => {
       try {
-        const status = await fetch(`${process.env.VITE_API_URL || 'http://localhost:3000'}/api/build/${buildId}`).then(r => r.json());
-        setProgress(status.progress);
-        setLogs(status.logs);
-        if (status.status === 'success') {
+        const buildData = await fetch(`${process.env.VITE_API_URL || 'http://localhost:3000'}/api/build/${buildId}`).then(r => r.json());
+        setProgress(buildData.progress);
+        setLogs(buildData.logs);
+        setStatus(buildData.status);
+
+        if (buildData.status === 'success') {
           setIsComplete(true);
-          setDownloadUrls({ aab: status.aabUrl, apk: status.apkUrl });
+          setDownloadUrls({ aab: buildData.aabUrl, apk: buildData.apkUrl });
           clearInterval(interval);
-        } else if (status.status === 'failed') {
+        } else if (buildData.status === 'failed') {
           setIsComplete(true);
           clearInterval(interval);
         }
@@ -119,7 +122,7 @@ const StepBuild: React.FC<Props> = ({ config, onReset }) => {
         </div>
       </div>
 
-      {isComplete && (
+      {isComplete && status === 'success' && (
         <div className="animate-scale-in bg-green-50 border border-green-200 rounded-xl p-8 text-center space-y-6">
           <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
             <CheckCircle className="w-8 h-8 text-green-600" />
@@ -130,8 +133,6 @@ const StepBuild: React.FC<Props> = ({ config, onReset }) => {
               Your app has been compiled and signed. Download the files below.
             </p>
           </div>
-
-
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-lg mx-auto">
             <button
@@ -163,6 +164,29 @@ const StepBuild: React.FC<Props> = ({ config, onReset }) => {
               className="px-6 py-2 rounded-lg font-medium text-slate-500 hover:text-slate-700 hover:bg-slate-100/50 transition-colors"
             >
               Start New Project
+            </button>
+          </div>
+        </div>
+      )}
+
+      {isComplete && status === 'failed' && (
+        <div className="animate-scale-in bg-red-50 border border-red-200 rounded-xl p-8 text-center space-y-6">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+            <AlertTriangle className="w-8 h-8 text-red-600" />
+          </div>
+          <div>
+            <h3 className="text-2xl font-bold text-red-800">Build Failed</h3>
+            <p className="text-red-700 max-w-md mx-auto mt-2">
+              Something went wrong during the build process. Check the logs above for details.
+            </p>
+          </div>
+
+          <div className="pt-4 border-t border-red-200/50">
+            <button
+              onClick={onReset}
+              className="px-6 py-2 rounded-lg font-medium text-red-600 hover:text-red-800 hover:bg-red-100/50 transition-colors"
+            >
+              Try Again
             </button>
           </div>
         </div>
