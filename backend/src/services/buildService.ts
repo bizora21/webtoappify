@@ -23,28 +23,54 @@ async function checkToolsAvailability(): Promise<{ hasJava: boolean; hasAndroidS
         hasBubblewrap: false
     };
 
+    console.log('🔍 Checking tool availability...');
+
     try {
+        console.log('   - Checking Java...');
         await execAsync('java -version');
         results.hasJava = true;
+        console.log('   ✅ Java found');
     } catch (e) {
-        console.warn('⚠️  Java not found');
+        console.warn('   ⚠️  Java not found');
     }
 
     try {
+        console.log('   - Checking Android SDK...');
         await execAsync('adb --version');
         results.hasAndroidSDK = true;
+        console.log('   ✅ Android SDK found');
     } catch (e) {
-        console.warn('⚠️  Android SDK not found');
+        console.warn('   ⚠️  Android SDK not found');
     }
 
     try {
-        const bubblewrapCmd = process.platform === 'win32' ? 'bubblewrap.cmd' : 'bubblewrap';
-        await execAsync(`${bubblewrapCmd} --version`);
-        results.hasBubblewrap = true;
-    } catch (e) {
-        console.warn('⚠️  Bubblewrap not found');
+        console.log('   - Checking Bubblewrap (with 5s timeout)...');
+
+        // On Windows, bubblewrap --version hangs, so skip the check
+        if (process.platform === 'win32') {
+            console.log('   ⚠️  Skipping Bubblewrap check on Windows (assuming installed)');
+            results.hasBubblewrap = true; // Assume it's installed
+        } else {
+            const bubblewrapCmd = 'bubblewrap';
+
+            // Add timeout to prevent hanging
+            await Promise.race([
+                execAsync(`${bubblewrapCmd} --version`),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
+            ]);
+
+            results.hasBubblewrap = true;
+            console.log('   ✅ Bubblewrap found');
+        }
+    } catch (e: any) {
+        if (e.message === 'Timeout') {
+            console.warn('   ⚠️  Bubblewrap check timed out (assuming not available)');
+        } else {
+            console.warn('   ⚠️  Bubblewrap not found');
+        }
     }
 
+    console.log(`📊 Tool check complete: Java=${results.hasJava}, SDK=${results.hasAndroidSDK}, Bubblewrap=${results.hasBubblewrap}`);
     return results;
 }
 

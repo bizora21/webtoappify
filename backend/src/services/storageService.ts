@@ -29,24 +29,24 @@ export async function uploadFile(localPath: string, key: string): Promise<string
             throw new Error(`File not found: ${localPath}`);
         }
 
-        const fileId = key.replace(/\//g, '-').replace(/\./g, '-'); // ID sem caracteres especiais
+        // Generate a short, valid fileId (max 36 chars, alphanumeric + hyphen)
+        const { v4: uuidv4 } = await import('uuid');
+        const fileId = uuidv4(); // UUID is exactly 36 chars with hyphens
         const fileName = path.basename(localPath);
 
-        // Create stream for Appwrite
-        const fileStream = fs.createReadStream(localPath);
-        // @ts-ignore
-        const file = {
-            name: fileName,
+        // Read file as Buffer and create File-like object
+        const fileBuffer = fs.readFileSync(localPath);
+        const blob = new Blob([fileBuffer], { type: mimeTypeFromExtension(localPath) });
+        const file = new File([blob], fileName, {
             type: mimeTypeFromExtension(localPath),
-            size: fs.statSync(localPath).size,
-            stream: fileStream
-        };
+            lastModified: fs.statSync(localPath).mtimeMs
+        });
 
         // Upload para Appwrite Storage
         const uploadedFile = await storage.createFile(
             BUCKET_ID,
             fileId,
-            file as any,
+            file,
             [
                 'read("any")', // Permitir leitura pública
             ]

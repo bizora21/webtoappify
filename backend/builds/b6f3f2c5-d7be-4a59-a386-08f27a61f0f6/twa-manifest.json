@@ -1,0 +1,20 @@
+{
+  "packageId": "com.com.lojarapidamz",
+  "host": "lojarapidamz.com",
+  "name": "LojaRapida",
+  "launcherName": "LojaRapida",
+  "display": "standalone",
+  "themeColor": "#4f46e5",
+  "navigationColor": "#4f46e5",
+  "backgroundColor": "#4f46e5",
+  "startUrl": "https://lojarapidamz.com/",
+  "iconUrl": "https://nyc.cloud.appwrite.io/v1/storage/buckets/692720f30033aa28d1cb/files/8845a6ee-fe97-4d21-8182-e8338136f7af/view?project=6925ff2b001511b5e0ea",
+  "maskableIconUrl": "https://nyc.cloud.appwrite.io/v1/storage/buckets/692720f30033aa28d1cb/files/8845a6ee-fe97-4d21-8182-e8338136f7af/view?project=6925ff2b001511b5e0ea",
+  "appVersion": "1.0.0",
+  "appVersionCode": 1,
+  "signingKey": {
+    "path": "C:\\Users\\USER\\Desktop\\webtoappify\\backend\\keystores\\com.com.lojarapidamz.jks",
+    "alias": "upload"
+  },
+  "generatorApp": "webtoappify"
+}

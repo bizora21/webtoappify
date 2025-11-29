@@ -30,7 +30,7 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 REM Verificar Bubblewrap
-bubblewrap --version >nul 2>&1
+call bubblewrap --version >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
     echo [X] Bubblewrap nao encontrado
 ) else (

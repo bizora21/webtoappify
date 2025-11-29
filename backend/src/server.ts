@@ -17,7 +17,26 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors({
-    origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+    origin: function (origin, callback) {
+        // In development, allow all origins
+        if (process.env.NODE_ENV !== 'production') {
+            callback(null, true);
+            return;
+        }
+
+        // In production, check against whitelist
+        const allowedOrigins = [
+            'http://localhost:5173',
+            'http://localhost:5175',
+            process.env.CORS_ORIGIN
+        ].filter(Boolean);
+
+        if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     credentials: true
 }));
 app.use(express.json({ limit: '50mb' }));
