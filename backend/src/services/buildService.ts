@@ -167,11 +167,25 @@ export class BuildService {
                 CI: 'true' // Some tools check this to disable interactive mode
             };
 
-            // Use npx to ensure we get the global installation
-            await execAsync(`npx @bubblewrap/cli init --manifest twa-manifest.json --directory .`, {
-                cwd: projectDir,
-                env: bubblewrapEnv
-            });
+            // Use global bubblewrap directly to avoid npx prompts
+            const bubblewrapExec = process.platform === 'win32' ? 'bubblewrap.cmd' : 'bubblewrap';
+            console.log(`   - Running ${bubblewrapExec} init...`);
+
+            try {
+                const { stdout, stderr } = await execAsync(`${bubblewrapExec} init --manifest twa-manifest.json --directory .`, {
+                    cwd: projectDir,
+                    env: bubblewrapEnv,
+                    timeout: 300000 // 5 minutes timeout
+                });
+                console.log('   - Bubblewrap init output:', stdout);
+                if (stderr) console.warn('   - Bubblewrap init warnings:', stderr);
+            } catch (error: any) {
+                console.error('   ❌ Bubblewrap init failed:', error.message);
+                // Log stdout/stderr if available in the error object (exec provides these)
+                if (error.stdout) console.error('   - Stdout:', error.stdout);
+                if (error.stderr) console.error('   - Stderr:', error.stderr);
+                throw error;
+            }
 
             // 3. Build APK/AAB
             console.log(`🔨 Building Android artifacts...`);
