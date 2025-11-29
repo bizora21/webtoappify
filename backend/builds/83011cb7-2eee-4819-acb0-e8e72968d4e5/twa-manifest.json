@@ -1,0 +1,20 @@
+{
+  "packageId": "com.com.facebook",
+  "host": "lojarapidamz.com",
+  "name": "LojaRapida",
+  "launcherName": "LojaRapida",
+  "display": "standalone",
+  "themeColor": "#4f46e5",
+  "navigationColor": "#4f46e5",
+  "backgroundColor": "#4f46e5",
+  "startUrl": "https://lojarapidamz.com/",
+  "iconUrl": "https://nyc.cloud.appwrite.io/v1/storage/buckets/692720f30033aa28d1cb/files/f25c3ac8-a1b8-41e5-a6cf-6284a115ac57/view?project=6925ff2b001511b5e0ea",
+  "maskableIconUrl": "https://nyc.cloud.appwrite.io/v1/storage/buckets/692720f30033aa28d1cb/files/f25c3ac8-a1b8-41e5-a6cf-6284a115ac57/view?project=6925ff2b001511b5e0ea",
+  "appVersion": "1.0.0",
+  "appVersionCode": 1,
+  "signingKey": {
+    "path": "C:\\Users\\USER\\Desktop\\webtoappify\\backend\\keystores\\com.com.facebook.jks",
+    "alias": "upload"
+  },
+  "generatorApp": "webtoappify"
+}
