@@ -15,7 +15,7 @@ WebToAppify é uma plataforma completa que permite transformar qualquer URL em u
 
 ### Frontend
 - **Framework**: React + Vite + TypeScript
-- **Estilização**: Tailwind CSS
+- **Estilização**: Vanilla CSS
 - **Componentes**: Wizard de 4 etapas com preview em tempo real
 
 ### Backend
@@ -196,7 +196,7 @@ Consulte [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md) para ver o que e
 
 ## 🛠️ Tecnologias Utilizadas
 
-- **Frontend**: React, TypeScript, Vite, Tailwind CSS, Lucide Icons
+- **Frontend**: React, TypeScript, Vite, Vanilla CSS, Lucide Icons
 - **Backend**: Node.js, Express, TypeScript, Multer
 - **Build**: Bubblewrap CLI, Gradle, Android SDK
 - **Storage**: Appwrite (Database + Storage)
